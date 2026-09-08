@@ -26,7 +26,7 @@ def parse_crossmatch_request(payload: Any) -> tuple[Any, Any, float | None]:
     """Validate the small JSON request accepted by the browser UI."""
 
     if not isinstance(payload, dict):
-        raise ValueError('Request body must be a JSON object.')
+        raise TypeError('Request body must be a JSON object.')
     if 'ra' not in payload or 'dec' not in payload:
         raise ValueError('Both ra and dec are required.')
     radius = payload.get('radius_arcsec')
@@ -89,13 +89,13 @@ class AstroSearchRequestHandler(BaseHTTPRequestHandler):
             payload = json.loads(self.rfile.read(content_length))
             ra, dec, radius = parse_crossmatch_request(payload)
             result = asyncio.run(crossmatch(ra, dec, radius_arcsec=radius, settings=self.server.settings))
-        except (InvalidCoordinateError, ValueError, json.JSONDecodeError) as exc:
+        except (InvalidCoordinateError, TypeError, ValueError, json.JSONDecodeError) as exc:
             self._send_json(400, {'error': str(exc)})
             return
         except AstroSearchError as exc:
             self._send_json(502, {'error': str(exc)})
             return
-        except Exception:
+        except Exception as exc:  # noqa: BLE001
             self._send_json(500, {'error': 'Crossmatch request failed.'})
             return
         self._send_json(200, result.as_dict())
