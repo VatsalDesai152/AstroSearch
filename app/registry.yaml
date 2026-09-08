@@ -1,0 +1,119 @@
+
+catalogs:
+  gaia_dr3:
+    enabled: true
+    provider: tap
+    wavelength: optical
+    endpoint: https://gea.esac.esa.int/tap-server/tap/sync
+    table: gaiadr3.gaia_source
+    description: Gaia DR3 TAP positional search
+    query_method: ADQL
+    units: degrees
+
+  twomass_psc:
+    enabled: true
+    provider: irsa_gator
+    wavelength: infrared
+    catalog: fp_psc
+    endpoint: https://irsa.ipac.caltech.edu/cgi-bin/Gator/nph-query
+    description: 2MASS Point Source Catalog
+    query_method: cone-search
+    units: arcseconds
+
+  allwise:
+    enabled: true
+    provider: irsa_gator
+    wavelength: infrared
+    catalog: allwise_p3as_psd
+    endpoint: https://irsa.ipac.caltech.edu/cgi-bin/Gator/nph-query
+    description: AllWISE catalog
+    query_method: cone-search
+    units: arcseconds
+
+  panstarrs_dr2:
+    enabled: true
+    provider: mast
+    wavelength: optical
+    endpoint: https://catalogs.mast.stsci.edu/api/v0.1/panstarrs/dr2/mean
+    description: Pan-STARRS DR2 mean object catalog
+    query_method: positional API
+    units: arcseconds
+
+  sdss:
+    enabled: true
+    provider: sdss
+    wavelength: optical
+    endpoint: https://skyserver.sdss.org/dr18/SkyServerWS/ConeSearch/ConeSearchService
+    description: Sloan Digital Sky Survey cone search
+    query_method: cone-search
+    units: arcseconds
+
+  first:
+    enabled: true
+    provider: heasarc_xamin
+    wavelength: radio
+    table: first
+    endpoint: https://heasarc.gsfc.nasa.gov/xamin/query
+    description: FIRST radio catalogue
+    query_method: Xamin positional search
+    units: arcseconds
+
+  nvss:
+    enabled: true
+    provider: heasarc_xamin
+    wavelength: radio
+    table: nvss
+    endpoint: https://heasarc.gsfc.nasa.gov/xamin/query
+    description: NVSS radio catalogue
+    query_method: Xamin positional search
+    units: arcseconds
+
+  vlass:
+    enabled: true
+    provider: heasarc_xamin
+    wavelength: radio
+    table: vlass
+    endpoint: https://heasarc.gsfc.nasa.gov/xamin/query
+    description: VLASS radio catalogue
+    query_method: Xamin positional search
+    units: arcseconds
+
+  lotss:
+    enabled: true
+    provider: heasarc_xamin
+    wavelength: radio
+    table: lotss
+    endpoint: https://heasarc.gsfc.nasa.gov/xamin/query
+    description: LoTSS radio catalogue
+    query_method: Xamin positional search
+    units: arcseconds
+
+  rosat:
+    enabled: true
+    provider: heasarc_xamin
+    wavelength: xray
+    table: rosmaster
+    endpoint: https://heasarc.gsfc.nasa.gov/xamin/query
+    description: ROSAT all-sky survey master catalog
+    query_method: Xamin positional search
+    units: arcseconds
+
+  chandra:
+    enabled: true
+    provider: heasarc_xamin
+    wavelength: xray
+    table: chandra
+    endpoint: https://heasarc.gsfc.nasa.gov/xamin/query
+    description: Chandra source catalogue
+    query_method: Xamin positional search
+    units: arcseconds
+
+  xmm:
+    enabled: true
+    provider: heasarc_xamin
+    wavelength: xray
+    table: xmm
+    endpoint: https://heasarc.gsfc.nasa.gov/xamin/query
+    description: XMM source catalogue
+    query_method: Xamin positional search
+    units: arcseconds

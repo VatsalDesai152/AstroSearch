@@ -1,0 +1,1 @@
+"""AstroSearch application package."""

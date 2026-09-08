@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AstroSearch</title>
+  <style>
+    :root { color-scheme: dark; --bg: #10131c; --panel: #191e2b; --line: #30394d; --text: #edf2ff; --muted: #aab5cc; --accent: #86b7ff; --danger: #ff9c9c; }
+    * { box-sizing: border-box; }
+    body { margin: 0; min-height: 100vh; background: radial-gradient(circle at 20% 0%, #1d3151, var(--bg) 48%); color: var(--text); font: 16px/1.5 system-ui, sans-serif; }
+    main { width: min(100% - 32px, 980px); margin: 0 auto; padding: 52px 0 72px; }
+    h1 { margin: 0 0 8px; font-size: clamp(2rem, 5vw, 3.4rem); letter-spacing: -0.04em; }
+    h2 { margin-top: 0; }
+    .lede { max-width: 680px; color: var(--muted); margin: 0 0 28px; }
+    .panel { background: color-mix(in srgb, var(--panel) 94%, transparent); border: 1px solid var(--line); border-radius: 18px; padding: 24px; box-shadow: 0 18px 60px #0004; }
+    form { display: grid; grid-template-columns: repeat(3, 1fr) auto; gap: 14px; align-items: end; }
+    label { display: grid; gap: 7px; color: var(--muted); font-size: .9rem; }
+    input { width: 100%; border: 1px solid var(--line); border-radius: 10px; background: #101521; color: var(--text); padding: 12px; font: inherit; }
+    input:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+    button { border: 0; border-radius: 10px; background: var(--accent); color: #07101f; padding: 12px 18px; font: 700 1rem inherit; cursor: pointer; white-space: nowrap; }
+    button:disabled { cursor: wait; opacity: .55; }
+    #status { min-height: 1.5em; margin: 16px 0 0; color: var(--muted); }
+    #status.error { color: var(--danger); }
+    #results { display: grid; gap: 18px; margin-top: 24px; }
+    .summary { display: flex; flex-wrap: wrap; gap: 10px 24px; color: var(--muted); }
+    .group { border-top: 1px solid var(--line); padding-top: 18px; }
+    .group h3 { margin: 0 0 8px; color: var(--accent); }
+    ul { padding-left: 20px; margin: 0; }
+    li { margin: 6px 0; }
+    .warning { border-left: 3px solid var(--danger); padding: 10px 14px; background: #351f2b; color: #ffd7d7; }
+    details { color: var(--muted); }
+    pre { max-height: 360px; overflow: auto; padding: 14px; border-radius: 10px; background: #0c1018; font-size: .8rem; white-space: pre-wrap; }
+    @media (max-width: 720px) { form { grid-template-columns: 1fr 1fr; } form button { grid-column: 1 / -1; } }
+    @media (max-width: 460px) { form { grid-template-columns: 1fr; } form button { grid-column: auto; } }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>AstroSearch</h1>
+    <p class="lede">Cross-match a sky position against the configured astronomy catalogs. Enter coordinates in decimal degrees; RA wraps automatically and DEC must be between −90° and +90°.</p>
+    <section class="panel" aria-labelledby="query-title">
+      <h2 id="query-title">New cross-match</h2>
+      <form id="query-form">
+        <label>Right ascension (°)<input id="ra" name="ra" type="number" step="any" value="187.277920" required></label>
+        <label>Declination (°)<input id="dec" name="dec" type="number" step="any" value="2.052390" required></label>
+        <label>Radius (arcsec)<input id="radius" name="radius" type="number" min="0.001" step="any" value="3" required></label>
+        <button id="submit" type="submit">Search catalogs</button>
+      </form>
+      <p id="status" role="status" aria-live="polite"></p>
+    </section>
+    <section id="results" aria-live="polite"></section>
+  </main>
+  <script>
+    const form = document.querySelector('#query-form');
+    const button = document.querySelector('#submit');
+    const status = document.querySelector('#status');
+    const results = document.querySelector('#results');
+
+    function text(tag, value, className) {
+      const element = document.createElement(tag);
+      if (className) element.className = className;
+      element.textContent = value;
+      return element;
+    }
+
+    function renderResult(result) {
+      results.replaceChildren();
+      const summary = document.createElement('div');
+      summary.className = 'summary';
+      summary.append(text('span', `Target: ${result.target.ra}°, ${result.target.dec}°`));
+      summary.append(text('span', `Catalogs queried: ${result.catalogs_queried}`));
+      summary.append(text('span', `Matches: ${result.provenance.matches.length}`));
+      results.append(summary);
+
+      if (result.failures.length) results.append(text('div', `${result.failures.length} catalog(s) failed. Successful results are still shown.`, 'warning'));
+      const groups = Object.entries(result.counterparts);
+      if (!groups.length) results.append(text('p', 'No counterparts found within the requested radius.'));
+      for (const [wavelength, sources] of groups) {
+        const group = document.createElement('section');
+        group.className = 'group';
+        group.append(text('h3', wavelength));
+        const list = document.createElement('ul');
+        for (const source of sources) list.append(text('li', `${source.catalog} · ${source.source_id} · ${Number(source.separation_arcsec).toFixed(3)} arcsec · confidence ${Number(source.confidence).toFixed(3)}`));
+        group.append(list);
+        results.append(group);
+      }
+      if (result.failures.length) {
+        const failureDetails = document.createElement('details');
+        failureDetails.append(text('summary', 'Show catalog failures'));
+        failureDetails.append(text('pre', JSON.stringify(result.failures, null, 2)));
+        results.append(failureDetails);
+      }
+      const raw = document.createElement('details');
+      raw.append(text('summary', 'Show raw response'));
+      raw.append(text('pre', JSON.stringify(result, null, 2)));
+      results.append(raw);
+    }
+
+    form.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      button.disabled = true;
+      status.className = '';
+      status.textContent = 'Querying catalogs…';
+      results.replaceChildren();
+      try {
+        const response = await fetch('/api/crossmatch', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ra: document.querySelector('#ra').value, dec: document.querySelector('#dec').value, radius_arcsec: document.querySelector('#radius').value })
+        });
+        const payload = await response.json();
+        if (!response.ok) throw new Error(payload.error || 'The query failed.');
+        status.textContent = 'Search complete.';
+        renderResult(payload);
+      } catch (error) {
+        status.className = 'error';
+        status.textContent = error.message || 'The query failed.';
+      } finally {
+        button.disabled = false;
+      }
+    });
+  </script>
+</body>
+</html>
