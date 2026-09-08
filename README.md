@@ -121,3 +121,4 @@ Push this directory to a new GitHub repository. The included GitHub Actions
 workflow runs the test suite and Ruff on every push and pull request. Generated
 files, virtual environments, local `.env` files, and caches are excluded by
 `.gitignore`.
+"# AstroSearch" 
