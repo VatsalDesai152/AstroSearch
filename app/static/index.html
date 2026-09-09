@@ -13,7 +13,7 @@
     h2 { margin-top: 0; }
     .lede { max-width: 680px; color: var(--muted); margin: 0 0 28px; }
     .panel { background: color-mix(in srgb, var(--panel) 94%, transparent); border: 1px solid var(--line); border-radius: 18px; padding: 24px; box-shadow: 0 18px 60px #0004; }
-    form { display: grid; grid-template-columns: repeat(3, 1fr) auto; gap: 14px; align-items: end; }
+    form { display: grid; grid-template-columns: repeat(5, 1fr) auto; gap: 14px; align-items: end; }
     label { display: grid; gap: 7px; color: var(--muted); font-size: .9rem; }
     input { width: 100%; border: 1px solid var(--line); border-radius: 10px; background: #101521; color: var(--text); padding: 12px; font: inherit; }
     input:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
@@ -30,7 +30,15 @@
     .warning { border-left: 3px solid var(--danger); padding: 10px 14px; background: #351f2b; color: #ffd7d7; }
     details { color: var(--muted); }
     pre { max-height: 360px; overflow: auto; padding: 14px; border-radius: 10px; background: #0c1018; font-size: .8rem; white-space: pre-wrap; }
-    @media (max-width: 720px) { form { grid-template-columns: 1fr 1fr; } form button { grid-column: 1 / -1; } }
+    select { width: 100%; border: 1px solid var(--line); border-radius: 10px; background: #101521; color: var(--text); padding: 12px; font: inherit; }
+    .toolbar { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 18px; align-items: center; }
+    .toolbar input, .toolbar select { width: auto; min-width: 180px; }
+    table { width: 100%; border-collapse: collapse; margin-top: 14px; font-size: .9rem; }
+    th, td { padding: 9px 8px; text-align: left; border-bottom: 1px solid var(--line); vertical-align: top; }
+    th { color: var(--muted); cursor: pointer; }
+    a { color: var(--accent); }
+    .group-card { border: 1px solid var(--line); border-radius: 12px; padding: 14px; margin-top: 14px; }
+    @media (max-width: 900px) { form { grid-template-columns: 1fr 1fr; } form button { grid-column: 1 / -1; } }
     @media (max-width: 460px) { form { grid-template-columns: 1fr; } form button { grid-column: auto; } }
   </style>
 </head>
@@ -44,6 +52,8 @@
         <label>Right ascension (°)<input id="ra" name="ra" type="number" step="any" value="187.277920" required></label>
         <label>Declination (°)<input id="dec" name="dec" type="number" step="any" value="2.052390" required></label>
         <label>Radius (arcsec)<input id="radius" name="radius" type="number" min="0.001" step="any" value="3" required></label>
+        <label>Epoch (Julian year)<input id="epoch" name="epoch" type="number" min="1800" max="2200" step="any" placeholder="optional"></label>
+        <label>Profile<select id="profile" name="profile"><option value="full">Full</option><option value="optical">Optical</option><option value="infrared">Infrared</option><option value="stellar">Stellar</option><option value="extragalactic">Extragalactic</option><option value="radio">Radio</option><option value="xray">X-ray</option><option value="exoplanet">Exoplanet</option><option value="identity">Object identity</option></select></label>
         <button id="submit" type="submit">Search catalogs</button>
       </form>
       <p id="status" role="status" aria-live="polite"></p>
@@ -73,16 +83,47 @@
       results.append(summary);
 
       if (result.failures.length) results.append(text('div', `${result.failures.length} catalog(s) failed. Successful results are still shown.`, 'warning'));
-      const groups = Object.entries(result.counterparts);
-      if (!groups.length) results.append(text('p', 'No counterparts found within the requested radius.'));
-      for (const [wavelength, sources] of groups) {
-        const group = document.createElement('section');
-        group.className = 'group';
-        group.append(text('h3', wavelength));
-        const list = document.createElement('ul');
-        for (const source of sources) list.append(text('li', `${source.catalog} · ${source.source_id} · ${Number(source.separation_arcsec).toFixed(3)} arcsec · confidence ${Number(source.confidence).toFixed(3)}`));
-        group.append(list);
-        results.append(group);
+      const allSources = Object.values(result.counterparts).flat();
+      if (!allSources.length) results.append(text('p', 'No counterparts found within the requested radius.'));
+      const toolbar = document.createElement('div');
+      toolbar.className = 'toolbar';
+      const filter = document.createElement('input');
+      filter.placeholder = 'Filter catalog, ID, type…';
+      const sort = document.createElement('select');
+      sort.innerHTML = '<option value="separation_arcsec">Sort by separation</option><option value="confidence">Sort by confidence</option><option value="catalog">Sort by catalog</option><option value="source_id">Sort by source ID</option>';
+      toolbar.append(filter, sort);
+      results.append(toolbar);
+      const table = document.createElement('table');
+      table.innerHTML = '<thead><tr><th>Catalog</th><th>Source</th><th>Separation</th><th>Confidence</th><th>Physical data</th><th>Links</th></tr></thead>';
+      const body = document.createElement('tbody');
+      table.append(body);
+      function renderRows() {
+        const query = filter.value.toLowerCase();
+        const rows = allSources.filter(source => `${source.catalog} ${source.source_id} ${JSON.stringify(source.physical || {})}`.toLowerCase().includes(query));
+        rows.sort((a, b) => String(a[sort.value]).localeCompare(String(b[sort.value]), undefined, {numeric: true}));
+        body.replaceChildren();
+        for (const source of rows) {
+          const row = document.createElement('tr');
+          const physical = source.physical || {};
+          const links = Object.entries(source.links || {}).map(([name, url]) => `<a href="${url}" target="_blank" rel="noreferrer">${name}</a>`).join(' · ');
+          row.innerHTML = `<td>${source.catalog}</td><td><strong>${source.source_id}</strong><br><small>${physical.object_type || ''}</small></td><td>${Number(source.separation_arcsec).toFixed(3)} arcsec</td><td>${Number(source.confidence).toFixed(4)}</td><td>${physical.redshift ?? ''}${physical.parallax != null ? ` · parallax ${physical.parallax}` : ''}</td><td>${links}</td>`;
+          body.append(row);
+        }
+      }
+      filter.addEventListener('input', renderRows);
+      sort.addEventListener('change', renderRows);
+      renderRows();
+      results.append(table);
+      if (result.crossmatch_groups?.length) {
+        const heading = text('h2', 'Cross-catalog objects');
+        results.append(heading);
+        for (const group of result.crossmatch_groups) {
+          const card = document.createElement('div');
+          card.className = 'group-card';
+          card.append(text('strong', `${group.group_id} · ${group.catalogs.join(', ')}`));
+          card.append(text('div', `${group.members.length} detections across ${group.wavelengths.join(', ')}`));
+          results.append(card);
+        }
       }
       if (result.failures.length) {
         const failureDetails = document.createElement('details');
@@ -106,7 +147,7 @@
         const response = await fetch('/api/crossmatch', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ ra: document.querySelector('#ra').value, dec: document.querySelector('#dec').value, radius_arcsec: document.querySelector('#radius').value })
+        body: JSON.stringify({ ra: document.querySelector('#ra').value, dec: document.querySelector('#dec').value, radius_arcsec: document.querySelector('#radius').value, epoch: document.querySelector('#epoch').value || undefined, profile: document.querySelector('#profile').value })
         });
         const payload = await response.json();
         if (!response.ok) throw new Error(payload.error || 'The query failed.');

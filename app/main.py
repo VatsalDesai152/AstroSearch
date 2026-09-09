@@ -43,13 +43,15 @@ async def crossmatch(
     dec: float | str,
     *,
     radius_arcsec: float | None = None,
+    epoch: float | None = None,
+    profile: str | None = None,
     settings: Settings | None = None,
 ) -> UnifiedRecord:
     """Run one cross-match using a freshly configured service."""
 
     async with httpx.AsyncClient(timeout=(settings or Settings()).request_timeout_seconds, follow_redirects=True) as client:
         service = build_service(settings=settings, client=client)
-        return await service.crossmatch(ra, dec, radius_arcsec=radius_arcsec)
+        return await service.crossmatch(ra, dec, radius_arcsec=radius_arcsec, epoch=epoch, profile=profile)
 
 
 def catalog_definitions(*, settings: Settings | None = None) -> dict[str, Any]:

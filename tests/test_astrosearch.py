@@ -7,6 +7,9 @@ import urllib.request
 
 import httpx
 import pytest
+from astropy import units as u
+from astropy.coordinates import SkyCoord
+from astropy.time import Time
 
 from app.main import build_service
 from app.models import (
@@ -24,7 +27,7 @@ from app.models import (
     parse_ipac_records,
     validate_target,
 )
-from app.providers import CatalogProvider, IRSAGatorProvider, MASTProvider, SDSSProvider
+from app.providers import CatalogProvider, IRSAGatorProvider, MASTProvider, SDSSProvider, TapProvider
 from app.service import CrossmatchService, QueryExecutor, angular_separation_arcsec, match_score, match_target
 from app.web import create_server, parse_crossmatch_request
 
@@ -47,6 +50,15 @@ def test_matching_filters_and_scores_sources() -> None:
     ]
     assert len(match_target(target, sources, radius_arcsec=3600)) == 2
     assert 0.0 <= match_score(10.0) <= 1.0
+    assert match_score(1.0, positional_error_arcsec=5.0) > match_score(1.0, positional_error_arcsec=0.5)
+
+
+def test_epoch_propagation_uses_proper_motion() -> None:
+    origin = SkyCoord(ra=10 * u.deg, dec=5 * u.deg, frame='icrs', pm_ra_cosdec=100 * u.mas / u.yr, pm_dec=50 * u.mas / u.yr, obstime=Time(2000, format='jyear'))
+    moved = origin.apply_space_motion(new_obstime=Time(2010, format='jyear'))
+    target = Target(float(moved.ra.deg), float(moved.dec.deg), epoch=2010)
+    source = CatalogSource('gaia', '1', 10.0, 5.0, 0.1, {}, {'wavelength': 'optical'}, {}, epoch=2000, proper_motion_ra_masyr=100, proper_motion_dec_masyr=50)
+    assert angular_separation_arcsec(target, source) < 0.01
 
 
 def test_normalization_handles_provider_aliases() -> None:
@@ -219,6 +231,41 @@ async def test_sdss_provider_uses_cone_search_service_and_arcminutes() -> None:
         catalog = CatalogDefinition('sdss', 'sdss', 'optical')
         sources = await provider.query(catalog, Target(10.0, 5.0), 3.0)
         assert [source.source_id for source in sources] == ['123']
+    finally:
+        await client.aclose()
+
+
+@pytest.mark.asyncio
+async def test_tap_provider_uses_registry_field_mapping() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        query = request.url.params['QUERY']
+        assert 'SELECT TOP 100 object_id, RAJ2000, DEJ2000 FROM II/246/out' in query
+        assert "POINT('ICRS', RAJ2000, DEJ2000)" in query
+        return httpx.Response(
+            200,
+            headers={'content-type': 'application/json'},
+            json=[{'object_id': 'J001', 'RAJ2000': 10.0, 'DEJ2000': 5.0}],
+            request=request,
+        )
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    try:
+        provider = TapProvider(client)
+        catalog = CatalogDefinition(
+            'vizier_demo',
+            'tap',
+            'infrared',
+            endpoint='https://example.test/tap/sync',
+            table='II/246/out',
+            parameters={
+                'columns': ['object_id', 'RAJ2000', 'DEJ2000'],
+                'id_field': 'object_id',
+                'ra_field': 'RAJ2000',
+                'dec_field': 'DEJ2000',
+            },
+        )
+        sources = await provider.query(catalog, Target(10.0, 5.0), 3.0)
+        assert [source.source_id for source in sources] == ['J001']
     finally:
         await client.aclose()
 

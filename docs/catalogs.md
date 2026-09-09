@@ -10,6 +10,38 @@
 - Table: `gaiadr3.gaia_source`
 - Query method: positional ADQL cone search
 
+## SIMBAD
+- Provider: TAP
+- Endpoint: https://simbad.cds.unistra.fr/simbad/sim-tap/sync
+- Protocol: ADQL/TAP
+- Wavelength: multi
+- Table: `basic`
+- Query method: positional ADQL cone search
+
+## NED
+- Provider: TAP
+- Endpoint: https://ned.ipac.caltech.edu/tap/sync
+- Protocol: ADQL/TAP
+- Wavelength: extragalactic
+- Table: `objdir`
+- Query method: positional ADQL cone search
+
+## NASA Exoplanet Archive
+- Provider: TAP
+- Endpoint: https://exoplanetarchive.ipac.caltech.edu/TAP/sync
+- Protocol: ADQL/TAP
+- Wavelength: exoplanet
+- Table: `ps`
+- Query method: positional ADQL cone search
+
+## VizieR
+- Provider: TAP
+- Endpoint: https://tapvizier.cds.unistra.fr/TAPVizieR/tap/sync
+- Protocol: ADQL/TAP
+- Wavelength: catalog-dependent
+- Example table: `II/246/out`
+- Disabled by default because VizieR contains thousands of possible catalogs; enable curated entries explicitly.
+
 ## 2MASS PSC
 - Provider: IRSA Gator
 - Endpoint: https://irsa.ipac.caltech.edu/cgi-bin/Gator/nph-query

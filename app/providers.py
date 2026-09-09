@@ -5,6 +5,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 import math
 from typing import Any
+from urllib.parse import quote
 
 import httpx
 
@@ -67,7 +68,9 @@ class _HTTPProvider(CatalogProvider):
             if not math.isfinite(ra) or not math.isfinite(dec) or not -90.0 <= dec <= 90.0:
                 continue
             source_id = str(normalized.get('source_id', f'{catalog.name}-{len(sources)}'))
-            error_value = row.get(positional_error_key) if positional_error_key else None
+            error_value = normalized.get('position_uncertainty_arcsec')
+            if error_value is None and positional_error_key:
+                error_value = row.get(positional_error_key)
             try:
                 positional_error = float(str(error_value)) if error_value not in (None, '') else None
             except (TypeError, ValueError):
@@ -84,6 +87,23 @@ class _HTTPProvider(CatalogProvider):
                         'wavelength': catalog.wavelength,
                         'table': catalog.table,
                         'catalog': catalog.catalog,
+                        'physical': {
+                            key: normalized[key]
+                            for key in ('parallax', 'redshift', 'object_type', 'quality_flags')
+                            if key in normalized
+                        },
+                        'links': {
+                            'SIMBAD': f'https://simbad.cds.unistra.fr/simbad/sim-id?Ident={quote(source_id)}'
+                            if catalog.name == 'simbad' else None,
+                            'NED': f'https://ned.ipac.caltech.edu/byname?objname={quote(source_id)}'
+                            if catalog.name == 'ned' else None,
+                            'MAST images / spectra / light curves': f'https://mast.stsci.edu/portal/Mashup/Clients/Mast/Portal.html?searchQuery={ra}%20{dec}'
+                            if catalog.provider == 'mast' else None,
+                            'IRSA finder chart': f'https://irsa.ipac.caltech.edu/applications/finderchart/servlet/api?locstr={ra}%20{dec}'
+                            if catalog.provider == 'irsa_gator' else None,
+                            'Legacy Survey image cutout': f'https://www.legacysurvey.org/viewer/fits-cutout?ra={ra}&dec={dec}&pixscale=0.262&bands=griz'
+                            if catalog.wavelength in {'optical', 'extragalactic'} else None,
+                        },
                     },
                     provenance=build_provenance(
                         catalog.name,
@@ -93,6 +113,10 @@ class _HTTPProvider(CatalogProvider):
                         query_parameters=parameters,
                         search_radius_arcsec=radius_arcsec,
                     ),
+                    epoch=normalized.get('epoch'),
+                    proper_motion_ra_masyr=normalized.get('pmra'),
+                    proper_motion_dec_masyr=normalized.get('pmdec'),
+                    position_uncertainty_arcsec=positional_error,
                 )
             )
         return sources
@@ -115,12 +139,30 @@ class TapProvider(_HTTPProvider):
     async def query(self, catalog: CatalogDefinition, target: Target, radius_arcsec: float) -> list[CatalogSource]:
         endpoint = catalog.endpoint or 'https://gea.esac.esa.int/tap-server/tap/sync'
         radius_deg = radius_arcsec / 3600.0
+        parameters = catalog.parameters
+        columns = parameters.get('columns') or ['source_id', 'ra', 'dec']
+        if isinstance(columns, str):
+            columns = [item.strip() for item in columns.split(',') if item.strip()]
+        columns = [str(column) for column in columns]
+        ra_field = str(parameters.get('ra_field', 'ra'))
+        dec_field = str(parameters.get('dec_field', 'dec'))
+        id_field = str(parameters.get('id_field', 'source_id'))
+        positional_error_field = parameters.get('positional_error_field')
+        if ra_field not in columns:
+            columns.append(ra_field)
+        if dec_field not in columns:
+            columns.append(dec_field)
+        if id_field not in columns:
+            columns.append(id_field)
         adql = (
-            'SELECT TOP 100 source_id, ra, dec, ra_error, dec_error FROM '
+            'SELECT TOP 100 ' + ', '.join(columns) + ' FROM '
             f"{catalog.table or 'gaiadr3.gaia_source'} "
             "WHERE CONTAINS(POINT('ICRS', ra, dec), CIRCLE('ICRS', "
             f'{target.ra}, {target.dec}, {radius_deg})) = 1'
         )
+        # Tables with non-standard coordinate column names need those names in
+        # the geometric predicate as well.
+        adql = adql.replace("POINT('ICRS', ra, dec)", f"POINT('ICRS', {ra_field}, {dec_field})")
         params = {'REQUEST': 'doQuery', 'LANG': 'ADQL', 'FORMAT': 'json', 'QUERY': adql}
         response = await self.client.get(endpoint, params=params)
         self._check(response, 'TAP')
@@ -135,7 +177,17 @@ class TapProvider(_HTTPProvider):
                 rows = parse_json_records(response.text)
         except Exception as exc:
             raise ResponseParseError(f'TAP response could not be parsed: {exc}') from exc
-        return self._sources(catalog, rows[:100], radius_arcsec, endpoint, params, 'ra_error')
+        mapped_rows = []
+        for row in rows[:100]:
+            mapped = dict(row)
+            if ra_field in mapped:
+                mapped['ra'] = mapped[ra_field]
+            if dec_field in mapped:
+                mapped['dec'] = mapped[dec_field]
+            if id_field in mapped:
+                mapped['source_id'] = mapped[id_field]
+            mapped_rows.append(mapped)
+        return self._sources(catalog, mapped_rows, radius_arcsec, endpoint, params, positional_error_field or 'ra_error')
 
 
 class IRSAGatorProvider(_HTTPProvider):
