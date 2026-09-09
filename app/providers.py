@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+import asyncio
 import math
 from typing import Any
 from urllib.parse import quote
@@ -42,6 +43,19 @@ class _HTTPProvider(CatalogProvider):
     ) -> None:
         self.client = client or httpx.AsyncClient(timeout=timeout, follow_redirects=True)
         self.max_response_bytes = max_response_bytes
+
+    async def _get(self, endpoint: str, provider: str, **kwargs: Any) -> httpx.Response:
+        """Retry short-lived connection failures from public archive services."""
+
+        last_error: Exception | None = None
+        for attempt in range(3):
+            try:
+                return await self.client.get(endpoint, **kwargs)
+            except (httpx.ConnectError, httpx.ReadError, httpx.RemoteProtocolError, httpx.ReadTimeout) as exc:
+                last_error = exc
+                if attempt < 2:
+                    await asyncio.sleep(0.25 * (2**attempt))
+        raise CatalogQueryError(f'{provider} connection failed after 3 attempts: {last_error}') from last_error
 
     def _sources(
         self,
@@ -164,7 +178,7 @@ class TapProvider(_HTTPProvider):
         # the geometric predicate as well.
         adql = adql.replace("POINT('ICRS', ra, dec)", f"POINT('ICRS', {ra_field}, {dec_field})")
         params = {'REQUEST': 'doQuery', 'LANG': 'ADQL', 'FORMAT': 'json', 'QUERY': adql}
-        response = await self.client.get(endpoint, params=params)
+        response = await self._get(endpoint, 'TAP', params=params)
         self._check(response, 'TAP')
         self._check_size(response, 'TAP')
         try:
@@ -206,7 +220,7 @@ class IRSAGatorProvider(_HTTPProvider):
             # photometry and catalog-specific metadata remain available.
             'outfmt': '1',
         }
-        response = await self.client.get(endpoint, params=params)
+        response = await self._get(endpoint, 'IRSA', params=params)
         self._check(response, 'IRSA')
         self._check_size(response, 'IRSA')
         try:
@@ -222,7 +236,7 @@ class MASTProvider(_HTTPProvider):
     async def query(self, catalog: CatalogDefinition, target: Target, radius_arcsec: float) -> list[CatalogSource]:
         endpoint = catalog.endpoint or 'https://catalogs.mast.stsci.edu/api/v0.1/panstarrs/dr2/mean'
         params = {'ra': str(target.ra), 'dec': str(target.dec), 'radius': str(radius_arcsec / 3600.0)}
-        response = await self.client.get(endpoint, params=params)
+        response = await self._get(endpoint, 'MAST', params=params)
         self._check(response, 'MAST')
         self._check_size(response, 'MAST')
         try:
@@ -239,7 +253,7 @@ class SDSSProvider(_HTTPProvider):
         endpoint = catalog.endpoint or 'https://skyserver.sdss.org/dr18/SkyServerWS/ConeSearch/ConeSearchService'
         # SDSS Cone Search expects the radius in arcminutes.
         params = {'format': 'csv', 'ra': str(target.ra), 'dec': str(target.dec), 'sr': str(radius_arcsec / 60.0)}
-        response = await self.client.get(endpoint, params=params)
+        response = await self._get(endpoint, 'SDSS', params=params)
         self._check(response, 'SDSS')
         self._check_size(response, 'SDSS')
         try:
@@ -260,7 +274,7 @@ class HEASARCXaminProvider(_HTTPProvider):
             'radius': str(radius_arcsec),
             'format': 'json',
         }
-        response = await self.client.get(endpoint, params=params)
+        response = await self._get(endpoint, 'HEASARC Xamin', params=params)
         self._check(response, 'HEASARC Xamin')
         self._check_size(response, 'HEASARC Xamin')
         try:
