@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import csv
+import io
 import json
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -71,10 +73,22 @@ class AstroSearchRequestHandler(BaseHTTPRequestHandler):
         if path == '/health':
             self._send_json(200, {'status': 'ok'})
             return
+        if path == '/api/catalogs':
+            from app.main import catalog_definitions
+            definitions = catalog_definitions(settings=self.server.settings)
+            self._send_json(200, {
+                'catalogs': [
+                    {'name': name, 'provider': catalog.provider, 'wavelength': catalog.wavelength, 'description': catalog.description, 'profiles': list(catalog.profiles), 'enabled': catalog.enabled}
+                    for name, catalog in definitions.items()
+                ],
+                'profiles': sorted({profile for catalog in definitions.values() for profile in catalog.profiles}),
+            })
+            return
         self._send_json(404, {'error': 'Not found.'})
 
     def do_POST(self) -> None:  # noqa: N802 - required by BaseHTTPRequestHandler
-        if urlparse(self.path).path != '/api/crossmatch':
+        path = urlparse(self.path).path
+        if path not in {'/api/crossmatch', '/api/crossmatch/batch', '/api/export'}:
             self._send_json(404, {'error': 'Not found.'})
             return
         try:
@@ -87,6 +101,65 @@ class AstroSearchRequestHandler(BaseHTTPRequestHandler):
             return
         try:
             payload = json.loads(self.rfile.read(content_length))
+            if path == '/api/crossmatch':
+                ra, dec, radius = parse_crossmatch_request(payload)
+                epoch = payload.get('epoch')
+                profile = str(payload['profile']) if payload.get('profile') is not None else None
+                options = {'radius_arcsec': radius, 'settings': self.server.settings}
+                if epoch is not None:
+                    options['epoch'] = epoch
+                if profile is not None:
+                    options['profile'] = profile
+                result = asyncio.run(crossmatch(ra, dec, **options))
+                self._send_json(200, result.as_dict())
+                return
+            if path == '/api/crossmatch/batch':
+                targets = payload.get('targets') if isinstance(payload, dict) else payload
+                if not isinstance(targets, list) or not targets or len(targets) > 100:
+                    raise ValueError('targets must be a non-empty list of at most 100 items.')
+                from app.main import build_service
+                async def run_batch() -> list[dict[str, Any]]:
+                    import httpx
+                    active_settings = self.server.settings or Settings()
+                    async with httpx.AsyncClient(timeout=active_settings.request_timeout_seconds, follow_redirects=True) as client:
+                        service = build_service(settings=active_settings, client=client)
+                        results = await service.crossmatch_many(targets)
+                        return [item.as_dict() for item in results]
+                result = asyncio.run(run_batch())
+                self._send_json(200, {'results': result, 'count': len(result)})
+                return
+            if path == '/api/export':
+                results = payload.get('results') if isinstance(payload, dict) else None
+                output_format = str(payload.get('format', 'json')).lower() if isinstance(payload, dict) else 'json'
+                if not isinstance(results, list):
+                    raise ValueError('results must be a list.')
+                if output_format == 'json':
+                    self._send(200, _json_bytes({'results': results}), 'application/json; charset=utf-8')
+                    return
+                if output_format != 'csv':
+                    raise ValueError('format must be json or csv.')
+                rows = []
+                for result in results:
+                    for group in result.get('crossmatch_groups', []):
+                        for member in group.get('members', []):
+                            rows.append({
+                                'target_ra': result.get('target', {}).get('ra'),
+                                'target_dec': result.get('target', {}).get('dec'),
+                                'group_id': group.get('group_id'),
+                                'catalog': member.get('catalog'),
+                                'source_id': member.get('source_id'),
+                                'separation_arcsec': member.get('separation_arcsec'),
+                                'confidence': member.get('confidence'),
+                                'object_type': member.get('physical', {}).get('object_type'),
+                                'redshift': member.get('physical', {}).get('redshift'),
+                            })
+                stream = io.StringIO()
+                writer = csv.DictWriter(stream, fieldnames=['target_ra', 'target_dec', 'group_id', 'catalog', 'source_id', 'separation_arcsec', 'confidence', 'object_type', 'redshift'])
+                writer.writeheader()
+                writer.writerows(rows)
+                self._send(200, stream.getvalue().encode('utf-8'), 'text/csv; charset=utf-8')
+                return
+        except (InvalidCoordinateError, ValueError, json.JSONDecodeError) as exc:
             ra, dec, radius = parse_crossmatch_request(payload)
             result = asyncio.run(crossmatch(ra, dec, radius_arcsec=radius, settings=self.server.settings))
         except (InvalidCoordinateError, TypeError, ValueError, json.JSONDecodeError) as exc:
@@ -98,7 +171,6 @@ class AstroSearchRequestHandler(BaseHTTPRequestHandler):
         except Exception as exc:  # noqa: BLE001
             self._send_json(500, {'error': 'Crossmatch request failed.'})
             return
-        self._send_json(200, result.as_dict())
 
     def log_message(self, format: str, *args: Any) -> None:
         return

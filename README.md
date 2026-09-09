@@ -76,7 +76,7 @@ The catalog registry is [app/registry.yaml](app/registry.yaml). Set `CATALOG_REG
 
 ## Supported providers
 
-- TAP/ADQL: Gaia DR3
+- TAP/ADQL: Gaia DR3, SIMBAD, NED, NASA Exoplanet Archive, and configurable VizieR catalogs
 - IRSA Gator: 2MASS PSC and AllWISE
 - MAST: Pan-STARRS DR2
 - SDSS Cone Search

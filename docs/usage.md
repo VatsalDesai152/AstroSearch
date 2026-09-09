@@ -5,7 +5,7 @@
 ```python
 from app.main import crossmatch
 
-result = await crossmatch(187.277920, 2.052390, radius_arcsec=5)
+result = await crossmatch(187.277920, 2.052390, radius_arcsec=5, epoch=2016, profile="optical")
 payload = result.as_dict()
 ```
 
@@ -22,6 +22,21 @@ service = build_service(registry_path="config/my-registry.yaml")
 ```
 
 Disabled entries are not queried. Unknown provider names are reported as catalog failures rather than stopping other catalog queries.
+
+## Profiles and batch requests
+
+Catalogs may declare profiles such as `optical`, `infrared`, `radio`, `xray`, `extragalactic`, or `exoplanet`. A profile limits the query plan to the relevant registry entries. Supplying an epoch enables proper-motion propagation when a catalog returns `pmra`, `pmdec`, and an epoch.
+
+Reusable services support batch work:
+
+```python
+results = await service.crossmatch_many([
+    {'ra': 187.277920, 'dec': 2.052390},
+    {'ra': 10.0, 'dec': 5.0, 'epoch': 2016},
+], profile='stellar')
+```
+
+The local server also exposes `GET /api/catalogs`, `POST /api/crossmatch/batch`, and `POST /api/export` with `format` set to `json` or `csv`.
 
 ## Adding a provider
 

@@ -9,6 +9,67 @@ catalogs:
     description: Gaia DR3 TAP positional search
     query_method: ADQL
     units: degrees
+    profiles: [full, optical, stellar]
+
+  simbad:
+    enabled: true
+    provider: tap
+    wavelength: multi
+    endpoint: https://simbad.cds.unistra.fr/simbad/sim-tap/sync
+    table: basic
+    description: SIMBAD object identities, types, and measurements
+    query_method: ADQL
+    units: degrees
+    parameters:
+      columns: [main_id, ra, dec, otype, sp_type, plx_value, pmra, pmdec]
+      id_field: main_id
+      positional_error_field: err_pos
+    profiles: [full, optical, stellar, identity]
+
+  ned:
+    enabled: true
+    provider: tap
+    wavelength: extragalactic
+    endpoint: https://ned.ipac.caltech.edu/tap/sync
+    table: objdir
+    description: NASA/IPAC Extragalactic Database object directory
+    query_method: ADQL
+    units: degrees
+    parameters:
+      columns: [prefname, ra, dec, uncmaja, z, zflag, prefphytype]
+      id_field: prefname
+      positional_error_field: uncmaja
+    profiles: [full, optical, extragalactic, identity]
+
+  exoplanet_archive:
+    enabled: true
+    provider: tap
+    wavelength: exoplanet
+    endpoint: https://exoplanetarchive.ipac.caltech.edu/TAP/sync
+    table: ps
+    description: NASA Exoplanet Archive planetary systems
+    query_method: ADQL
+    units: degrees
+    parameters:
+      columns: [pl_name, hostname, ra, dec, discoverymethod, pl_orbper, pl_rade]
+      id_field: pl_name
+    profiles: [full, exoplanet, stellar]
+
+  vizier_2mass_reference:
+    enabled: false
+    provider: tap
+    wavelength: infrared
+    endpoint: https://tapvizier.cds.unistra.fr/TAPVizieR/tap/sync
+    table: II/246/out
+    description: VizieR TAP example catalog entry; enable for published-catalog access
+    query_method: ADQL
+    units: degrees
+    parameters:
+      columns: [2MASS, RAJ2000, DEJ2000, Jmag, Hmag, Kmag]
+      id_field: 2MASS
+      ra_field: RAJ2000
+      dec_field: DEJ2000
+    profiles: [full, infrared, stellar]
 
   twomass_psc:
     enabled: true
@@ -19,6 +80,7 @@ catalogs:
     description: 2MASS Point Source Catalog
     query_method: cone-search
     units: arcseconds
+    profiles: [full, infrared, stellar]
 
   allwise:
     enabled: true
@@ -29,6 +91,7 @@ catalogs:
     description: AllWISE catalog
     query_method: cone-search
     units: arcseconds
+    profiles: [full, infrared, stellar]
 
   panstarrs_dr2:
     enabled: true
@@ -38,6 +101,7 @@ catalogs:
     description: Pan-STARRS DR2 mean object catalog
     query_method: positional API
     units: arcseconds
+    profiles: [full, optical, extragalactic]
 
   sdss:
     enabled: true
@@ -47,6 +111,7 @@ catalogs:
     description: Sloan Digital Sky Survey cone search
     query_method: cone-search
     units: arcseconds
+    profiles: [full, optical, extragalactic, spectroscopy]
 
   first:
     enabled: true
@@ -57,6 +122,7 @@ catalogs:
     description: FIRST radio catalogue
     query_method: Xamin positional search
     units: arcseconds
+    profiles: [full, radio, extragalactic]
 
   nvss:
     enabled: true
@@ -67,6 +133,7 @@ catalogs:
     description: NVSS radio catalogue
     query_method: Xamin positional search
     units: arcseconds
+    profiles: [full, radio, extragalactic]
 
   vlass:
     enabled: true
@@ -77,6 +144,7 @@ catalogs:
     description: VLASS radio catalogue
     query_method: Xamin positional search
     units: arcseconds
+    profiles: [full, radio, extragalactic]
 
   lotss:
     enabled: true
@@ -87,6 +155,7 @@ catalogs:
     description: LoTSS radio catalogue
     query_method: Xamin positional search
     units: arcseconds
+    profiles: [full, radio, extragalactic]
 
   rosat:
     enabled: true
@@ -97,6 +166,7 @@ catalogs:
     description: ROSAT all-sky survey master catalog
     query_method: Xamin positional search
     units: arcseconds
+    profiles: [full, xray, high-energy]
 
   chandra:
     enabled: true
@@ -107,6 +177,7 @@ catalogs:
     description: Chandra source catalogue
     query_method: Xamin positional search
     units: arcseconds
+    profiles: [full, xray, high-energy]
 
   xmm:
     enabled: true
@@ -117,3 +188,4 @@ catalogs:
     description: XMM source catalogue
     query_method: Xamin positional search
     units: arcseconds
+    profiles: [full, xray, high-energy]

@@ -1,8 +1,4 @@
-"""Data models, configuration, catalog loading, and response parsing.
 
-This module is deliberately dependency-light apart from the astronomy parsers.  It
-contains the stable data contract shared by providers and the cross-match service.
-"""
 
 from __future__ import annotations
 
@@ -21,6 +17,7 @@ from astropy.io.votable import parse as parse_votable
 from astropy.coordinates import SkyCoord
 from astropy import units as u
 
+#error classes
 
 class AstroSearchError(Exception):
     """Base exception for the cross-match engine."""
@@ -45,7 +42,7 @@ class CatalogQueryError(AstroSearchError):
 class ResponseParseError(AstroSearchError):
     """Raised when a provider response cannot be parsed."""
 
-
+#establishing data-types for fields
 @dataclass(slots=True)
 class Target:
     ra: float
@@ -67,6 +64,7 @@ class CatalogDefinition:
     query_method: str | None = None
     units: str | None = None
     parameters: dict[str, Any] = field(default_factory=dict)
+    profiles: tuple[str, ...] = ()
 
 
 @dataclass(slots=True)
@@ -79,6 +77,10 @@ class CatalogSource:
     data: dict[str, Any]
     metadata: dict[str, Any]
     provenance: dict[str, Any]
+    epoch: float | None = None
+    proper_motion_ra_masyr: float | None = None
+    proper_motion_dec_masyr: float | None = None
+    position_uncertainty_arcsec: float | None = None
 
 
 @dataclass(slots=True)
@@ -115,6 +117,7 @@ class UnifiedRecord:
     counterparts: dict[str, list[dict[str, Any]]]
     failures: list[dict[str, Any]]
     provenance: dict[str, Any]
+    crossmatch_groups: list[dict[str, Any]] = field(default_factory=list)
 
     def as_dict(self) -> dict[str, Any]:
         """Return a JSON-serializable representation of this result."""
@@ -184,6 +187,7 @@ class CatalogRegistry:
                 query_method=payload.get('query_method'),
                 units=payload.get('units'),
                 parameters=dict(payload.get('parameters', {})),
+                profiles=tuple(str(item) for item in payload.get('profiles', ())),
             )
 
     @property
@@ -214,6 +218,13 @@ def validate_target(ra: float | str, dec: float | str, *, frame: str = 'icrs', e
     dec_value = _as_float(dec, 'dec')
     if not -90.0 <= dec_value <= 90.0:
         raise InvalidCoordinateError('DEC must be within [-90, 90] degrees.')
+    if epoch is not None:
+        try:
+            epoch = float(epoch)
+        except (TypeError, ValueError) as exc:
+            raise InvalidCoordinateError('epoch must be numeric.') from exc
+        if not math.isfinite(epoch) or epoch < 1800 or epoch > 2200:
+            raise InvalidCoordinateError('epoch must be a finite Julian year between 1800 and 2200.')
     try:
         coordinate = SkyCoord(ra=ra_value * u.deg, dec=dec_value * u.deg, frame=frame)
     except Exception as exc:
@@ -228,7 +239,17 @@ def normalize_field_names(record: Mapping[str, Any]) -> dict[str, Any]:
         'ra': 'ra', 'ra_icrs': 'ra', 'raj2000': 'ra', 'ramean': 'ra',
         'dec': 'dec', 'dec_icrs': 'dec', 'dej2000': 'dec', 'decmean': 'dec',
         'source_id': 'source_id', 'objid': 'source_id', 'designation': 'source_id',
-        'id': 'source_id', 'sourceid': 'source_id',
+        'id': 'source_id', 'sourceid': 'source_id', 'main_id': 'source_id',
+        'objname': 'source_id', 'prefname': 'source_id', 'pl_name': 'source_id', 'oid': 'source_id',
+        'pmra': 'pmra', 'pm_ra': 'pmra', 'pmra_cosdec': 'pmra',
+        'pmdec': 'pmdec', 'pm_dec': 'pmdec',
+        'ref_epoch': 'epoch', 'epoch': 'epoch', 'obsepoch': 'epoch',
+        'poserr': 'position_uncertainty_arcsec', 'pos_error': 'position_uncertainty_arcsec',
+        'ra_error': 'position_uncertainty_arcsec', 'dec_error': 'position_uncertainty_arcsec',
+        'parallax': 'parallax', 'plx_value': 'parallax',
+        'z': 'redshift', 'redshift': 'redshift',
+        'otype': 'object_type', 'objtype': 'object_type', 'morphology': 'object_type', 'prefphytype': 'object_type',
+        'quality': 'quality_flags', 'quality_flag': 'quality_flags', 'flags': 'quality_flags',
     }
     normalized: dict[str, Any] = {}
     for key, value in record.items():
@@ -247,6 +268,12 @@ def normalize_source_record(raw_record: Mapping[str, Any]) -> dict[str, Any]:
         values['dec'] = float(values['dec'])
     if 'source_id' in values:
         values['source_id'] = str(values['source_id'])
+    for key in ('pmra', 'pmdec', 'epoch', 'position_uncertainty_arcsec', 'parallax', 'redshift'):
+        if key in values and values[key] not in (None, ''):
+            try:
+                values[key] = float(values[key])
+            except (TypeError, ValueError):
+                values.pop(key, None)
     return values
 
 
@@ -264,13 +291,12 @@ def parse_json_records(payload: str | bytes | dict[str, Any] | list[Any]) -> lis
 
 def parse_csv_records(payload: str | bytes) -> list[dict[str, Any]]:
     text = payload.decode('utf-8') if isinstance(payload, bytes) else payload
-    # SDSS prepends a ``#Table1`` marker to its CSV output.
     csv_text = '\n'.join(line for line in text.splitlines() if not line.lstrip().startswith('#'))
     return [dict(row) for row in csv.DictReader(io.StringIO(csv_text))]
 
 
 def parse_ipac_records(payload: str | bytes) -> list[dict[str, Any]]:
-    """Parse the IPAC ASCII table returned by IRSA Gator (``outfmt=1``)."""
+    """Parse an IPAC ASCII table, including IRSA Gator responses."""
 
     text = payload.decode('utf-8') if isinstance(payload, bytes) else payload
     table = ascii.read(text, format='ipac')
